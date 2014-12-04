@@ -99,35 +99,62 @@ function Test-WinRMConfiguration
         ($RuleSet.Count -gt 1))
     {
         $IsValid | 
-            Add-Member -MemberType NoteProperty -Name TestResults -value (Test-WinRMRuleSet -RuleSet $RuleSet)
+            Add-Member -MemberType NoteProperty -Name TestResults -value (Invoke-WinRMRuleSet -RuleSet $RuleSet)
     }
 
     return $IsValid
 }
 
-function Test-LinuxOrMacRuleSet
+function Invoke-LinuxOrMacRuleSet
 {
     [cmdletbinding()]
-    param ($CurrentResult)
+    param ($CurrentState = $script:CurrentState)
 
     $LinuxOrMacRuleSet = @{}
     
+    Write-Verbose "Validating Basic Auth for the WinRM service is true:"
+    Write-Verbose "`t$($CurrentState.Service.Auth.Basic.Path) is: $($CurrentState.Service.Auth.Basic.CurrentValue)"
     $LinuxOrMacRuleSet.BasicAuthEnabled = $CurrentState.Service.Auth.Basic.CurrentValue
+    
+    Write-Verbose "Validating AllowUnencrypted is true for the WinRM service:"
+    Write-Verbose "`t$($CurrentState.Service.AllowUnencrypted.Path) is: $($CurrentState.Service.AllowUnencrypted.CurrentValue)"
     $LinuxOrMacRuleSet.AllowUnencryptedEnabled = $CurrentState.Service.AllowUnencrypted.CurrentValue
 
-    $LinuxOrMacRuleSet.IsValid = $true
+    $IsValid = $true
+
     foreach ($key in $LinuxOrMacRuleSet.Keys) 
     {
-        if (($key -notlike 'IsValid') -and $LinuxOrMacRuleSet.IsValid )
+        if ($IsValid)
         {
-            $LinuxOrMacRuleSet.IsValid = $LinuxOrMacRuleSet[$key]
+            $IsValid = $LinuxOrMacRuleSet[$key]
         }
     }
-    $CurrentResult.LinuxOrMacRuleSet = New-CustomObject -TypeName Chef.WinRM.TestResult.LinuxOrMacRuleSet -PropertyHashtable $LinuxOrMacRuleSet
-    return $CurrentResult
+
+    $LinuxOrMacRuleSet.IsValid = $IsValid   
+    
+    return (New-CustomObject -TypeName Chef.WinRM.TestResult.LinuxOrMacRuleSet -PropertyHashtable $LinuxOrMacRuleSet)
 }
 
-function Test-WinRMRuleSet 
+function Invoke-WindowsRuleSet 
+{
+    [cmdletbinding()]
+    param ($CurrentState = $script:CurrentState)
+
+    $WindowsRuleSet = @{}
+    
+    Write-Verbose "Validating Negotiate Auth for the WinRM Service is true:"
+    Write-Verbose "`t$($CurrentState.Service.Auth.Negotiate.Path) is: $($CurrentState.Service.Auth.Negotiate.CurrentValue)"
+    $WindowsRuleSet.NegotiateAuthEnabled = $CurrentState.Service.Auth.Negotiate.CurrentValue
+    
+    Write-Verbose "Validating Kerberos Auth for the WinRM Service is true:"
+    Write-Verbose "`t$($CurrentState.Service.Auth.Kerberos.Path) is: $($CurrentState.Service.Auth.Kerberos.CurrentValue)"
+    $WindowsRuleSet.KerberosAuthEnabled = $CurrentState.Service.Auth.Kerberos.CurrentValue
+
+
+    return (New-CustomObject -TypeName Chef.WinRM.TestResult.WindowsRuleSet -PropertyHashtable $WindowsRuleSet)
+}
+
+function Invoke-WinRMRuleSet 
 {
     param (
         [cmdletbinding()]  
@@ -139,15 +166,11 @@ function Test-WinRMRuleSet
     $Result = @{}
     switch ($RuleSet)
     {
-        {('LinuxOrMac', 'All') -contains $_ } { $Result = Test-LinuxOrMacRuleSet -CurrentResult $Result }
-        {('Windows', 'All') -contains $_ } { $Result = Test-WindowsRuleSet -CurrentResult $Result }
+        {('LinuxOrMac', 'All') -contains $_ } { $Result.LinuxOrMacRuleSet = Invoke-LinuxOrMacRuleSet }
+        {('Windows', 'All') -contains $_ } { $Result.WindowsRuleSet = Invoke-WindowsRuleSet }
         default {}
     }
     return (New-CustomObject -TypeName Chef.WinRM.TestResult -PropertyHashtable $Result)
-}
-
-function Test-WindowsRuleSet 
-{
 }
 
 function Test-WinRMServiceState
