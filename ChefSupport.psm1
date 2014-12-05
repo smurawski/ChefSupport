@@ -115,8 +115,10 @@ function Invoke-LinuxOrMacRuleSet
 
     $Rules = @{
         LocalAccountLoginEnabled  =  { ($CurrentState.Service.Auth.Basic.CurrentValue -and
-                                        $CurrentState.Service.AllowUnencrypted.CurrentValue) -or 
-                                        ($CurrentState.Service.Auth.Negotiate.CurrentValue)  }
+                                        $CurrentState.Service.AllowUnencrypted.CurrentValue -and 
+                                        $CurrentState.Listener.Http.CurrentValue) -or 
+                                        ($CurrentState.Service.Auth.Negotiate.CurrentValue -and 
+                                        $CurrentState.Listener.Https.CurrentValue)  }
         DomainAccountLoginEnabled =  { $CurrentState.Service.Auth.Negotiate.CurrentValue -and 
                                         $CurrentState.Listener.HTTPS.CurrentValue } 
         OnlySecureTrafficEnabled  =  { (-not $CurrentState.Service.AllowUnencrypted.CurrentValue) -and 
@@ -127,14 +129,14 @@ function Invoke-LinuxOrMacRuleSet
         SecureTrafficAvailable    =  { $CurrentState.Listener.HTTPS.CurrentValue }  
     }
 
-    $LinuxOrMacRuleSet = @{}
+    $Results = @{}
     foreach ($key in $Rules.Keys)
     {  
         Write-Verbose "Processing $key in the LinuxOrMac Rule Set"
-        $LinuxOrMacRuleSet.Add($key, ($rules[$key]).Invoke())  | Out-Null       
+        $Results.Add($key, ($rules[$key]).Invoke())  | Out-Null       
     }
 
-    return (New-CustomObject -TypeName Chef.WinRM.TestResult.LinuxOrMacWorkstation -PropertyHashtable $LinuxOrMacRuleSet)
+    return (New-CustomObject -TypeName Chef.WinRM.TestResult.LinuxOrMacWorkstation -PropertyHashtable $Results)
 }
 
 function Invoke-WindowsRuleSet 
@@ -144,24 +146,27 @@ function Invoke-WindowsRuleSet
 
 
     $Rules = @{
-        LocalAccountLoginEnabled  = {}
-        DomainAccountLoginEnabled = {}
-        OnlySecureTrafficEnabled  = {}
-        PlaintextTrafficAvailable = {}
-        SecureTrafficAvailable    = {}
+        LocalAccountLoginEnabled  = { ($CurrentState.Service.Auth.Basic.CurrentValue -and
+                                        $CurrentState.Service.AllowUnencrypted.CurrentValue) -or 
+                                        ($CurrentState.Service.Auth.Negotiate.CurrentValue)  }
+        DomainAccountLoginEnabled = { $CurrentState.Service.Auth.Negotiate.CurrentValue -or 
+                                        $CurrentState.Service.Auth.Kerberos.CurrentValue } 
+        OnlySecureTrafficEnabled  = { (-not $CurrentState.Service.AllowUnencrypted.CurrentValue) }
+        PlaintextTrafficAvailable = { $CurrentState.Listener.HTTP.CurrentValue -and 
+                                        $CurrentState.Service.AllowUnencrypted.CurrentValue }
+        SecureTrafficAvailable    = { $CurrentState.Listener.HTTPS.CurrentValue -or 
+                                        ((-not $CurrentState.Service.AllowUnencrypted.CurrentValue) -and 
+                                        ($CurrentState.Service.Auth.Kerberos.CurrentValue -or
+                                            $CurrentState.Service.Auth.Negotiate.CurrentValue)) } 
     }
-    $WindowsRuleSet = @{}
-    
-    Write-Verbose "Validating Negotiate Auth for the WinRM Service is true:"
-    Write-Verbose "`t$($CurrentState.Service.Auth.Negotiate.Path) is: $($CurrentState.Service.Auth.Negotiate.CurrentValue)"
-    $WindowsRuleSet.NegotiateAuthEnabled = $CurrentState.Service.Auth.Negotiate.CurrentValue
-    
-    Write-Verbose "Validating Kerberos Auth for the WinRM Service is true:"
-    Write-Verbose "`t$($CurrentState.Service.Auth.Kerberos.Path) is: $($CurrentState.Service.Auth.Kerberos.CurrentValue)"
-    $WindowsRuleSet.KerberosAuthEnabled = $CurrentState.Service.Auth.Kerberos.CurrentValue
+    $Results = @{}
+    foreach ($key in $Rules.Keys)
+    {  
+        Write-Verbose "Processing $key in the LinuxOrMac Rule Set"
+        $Results.Add($key, ($rules[$key]).Invoke())  | Out-Null       
+    }
 
-
-    return (New-CustomObject -TypeName Chef.WinRM.TestResult.WindowsWorkstation -PropertyHashtable $WindowsRuleSet)
+    return (New-CustomObject -TypeName Chef.WinRM.TestResult.WindowsWorkstation -PropertyHashtable $Results)
 }
 
 function Invoke-WinRMRuleSet 

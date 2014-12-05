@@ -267,12 +267,72 @@ InModuleScope ChefSupport {
     }    
     
     Describe 'how Invoke-WindowsRuleSet responds' {
-        context 'when Negotiate Auth is disabled' {
+        context 'when AllowUnencrypted is enabled and Basic Auth is enabled.' {     
             $CurrentState = Get-CurrentState               
-            $CurrentState.Service.Auth.Negotiate.CurrentValue = $false            
-            it 'should have a report showing Negotiate Auth is disabled' {
+            $CurrentState.Service.AllowUnencrypted.CurrentValue = $true
+            $CurrentState.Service.Auth.Basic.CurrentValue = $true
+           
+            it 'should have a report showing local account login is enabled' {
+                (Invoke-WindowsRuleSet -CurrentState $CurrentState).LocalAccountLoginEnabled | 
+                    should be $true
+            }
+        }
+        context 'when AllowUnencrypted is disabled and Basic Auth is enabled and Negotiate Auth is disabled.' {     
+            $CurrentState = Get-CurrentState               
+            $CurrentState.Service.AllowUnencrypted.CurrentValue = $false
+            $CurrentState.Service.Auth.Negotiate.CurrentValue = $false
+            $CurrentState.Service.Auth.Basic.CurrentValue = $true            
+
+            it 'should have a report showing local account login is disabled' {
                 (Invoke-WindowsRuleSet -CurrentState $CurrentState).LocalAccountLoginEnabled | 
                     should be $false
+            }
+        }
+        context 'when Negotiate Auth is enabled and Allow Unencrypted is not enabled' {
+            $CurrentState = Get-CurrentState
+            $CurrentState.Service.Auth.Basic.CurrentValue = $true
+            $CurrentState.Service.Auth.Negotiate.CurrentValue = $true
+            $CurrentState.Service.AllowUnencrypted.CurrentValue = $false
+            $CurrentState.Listener.HTTPS.CurrentValue = $false
+
+            it 'should have a report showing local account login is enabled' {
+                (Invoke-WindowsRuleSet -CurrentState $CurrentState).LocalAccountLoginEnabled | 
+                    should be $true
+            }
+            it 'should have a report showing domain account login is enabled' {
+                (Invoke-WindowsRuleSet -CurrentState $CurrentState).DomainAccountLoginEnabled | 
+                    should be $true
+            }
+        }
+        context 'when LocalLogin is enabled and HTTPS is not available' {
+            $CurrentState = Get-CurrentState               
+            $CurrentState.Service.AllowUnencrypted.CurrentValue = $false
+            $CurrentState.Service.Auth.Negotiate.CurrentValue = $true
+            $CurrentState.Listener.HTTP.CurrentValue = $true 
+            $CurrentState.Listener.HTTPS.CurrentValue = $false
+
+            it 'should have a report showing Secure Traffic is not available' {
+                (Invoke-WindowsRuleSet -CurrentState $CurrentState).SecureTrafficAvailable | 
+                    should be $true
+            }
+            it 'should have a report showing Plaintext Traffic is available' {
+                (Invoke-WindowsRuleSet -CurrentState $CurrentState).PlaintextTrafficAvailable | 
+                    should be $false
+            }
+        }
+        context 'when LocalLogin is enabled and HTTP and HTTPS are available' {
+            $CurrentState = Get-CurrentState               
+            $CurrentState.Service.Auth.Negotiate.CurrentValue = $true
+            $CurrentState.Listener.HTTP.CurrentValue = $true 
+            $CurrentState.Listener.HTTPS.CurrentValue = $true
+
+            it 'should have a report showing Secure Traffic is available' {
+                (Invoke-WindowsRuleSet -CurrentState $CurrentState).SecureTrafficAvailable | 
+                    should be $true
+            }
+            it 'should have a report showing Plaintext Traffic is available' {
+                (Invoke-WindowsRuleSet -CurrentState $CurrentState).PlaintextTrafficAvailable | 
+                    should be $true
             }
         }
     }
