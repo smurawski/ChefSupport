@@ -75,6 +75,9 @@ $WinRMSettings = @{
             }
         }
     }
+    Listener = @{
+        ProviderPath = 'WSMan:\localhost\Listener'
+    }
 }
 
 function Test-WinRMConfiguration
@@ -110,29 +113,28 @@ function Invoke-LinuxOrMacRuleSet
     [cmdletbinding()]
     param ($CurrentState = $script:CurrentState)
 
-    $LinuxOrMacRuleSet = @{}
-    
-    Write-Verbose "Validating Basic Auth for the WinRM service is true:"
-    Write-Verbose "`t$($CurrentState.Service.Auth.Basic.Path) is: $($CurrentState.Service.Auth.Basic.CurrentValue)"
-    $LinuxOrMacRuleSet.BasicAuthEnabled = $CurrentState.Service.Auth.Basic.CurrentValue
-    
-    Write-Verbose "Validating AllowUnencrypted is true for the WinRM service:"
-    Write-Verbose "`t$($CurrentState.Service.AllowUnencrypted.Path) is: $($CurrentState.Service.AllowUnencrypted.CurrentValue)"
-    $LinuxOrMacRuleSet.AllowUnencryptedEnabled = $CurrentState.Service.AllowUnencrypted.CurrentValue
-
-    $IsValid = $true
-
-    foreach ($key in $LinuxOrMacRuleSet.Keys) 
-    {
-        if ($IsValid)
-        {
-            $IsValid = $LinuxOrMacRuleSet[$key]
-        }
+    $Rules = @{
+        LocalAccountLoginEnabled  =  { ($CurrentState.Service.Auth.Basic.CurrentValue -and
+                                        $CurrentState.Service.AllowUnencrypted.CurrentValue) -or 
+                                        ($CurrentState.Service.Auth.Negotiate.CurrentValue)  }
+        DomainAccountLoginEnabled =  { $CurrentState.Service.Auth.Negotiate.CurrentValue -and 
+                                        $CurrentState.Listener.HTTPS.CurrentValue } 
+        OnlySecureTrafficEnabled  =  { (-not $CurrentState.Service.AllowUnencrypted.CurrentValue) -and 
+                                        (-not $CurrentState.Listener.HTTP.CurrentValue) -and 
+                                        $CurrentState.Listener.HTTPS.CurrentValue } 
+        PlaintextTrafficAvailable =  { $CurrentState.Listener.HTTP.CurrentValue -and 
+                                        $CurrentState.Service.AllowUnencrypted.CurrentValue }
+        SecureTrafficAvailable    =  { $CurrentState.Listener.HTTPS.CurrentValue }  
     }
 
-    $LinuxOrMacRuleSet.IsValid = $IsValid   
-    
-    return (New-CustomObject -TypeName Chef.WinRM.TestResult.LinuxOrMacRuleSet -PropertyHashtable $LinuxOrMacRuleSet)
+    $LinuxOrMacRuleSet = @{}
+    foreach ($key in $Rules.Keys)
+    {  
+        Write-Verbose "Processing $key in the LinuxOrMac Rule Set"
+        $LinuxOrMacRuleSet.Add($key, ($rules[$key]).Invoke())  | Out-Null       
+    }
+
+    return (New-CustomObject -TypeName Chef.WinRM.TestResult.LinuxOrMacWorkstation -PropertyHashtable $LinuxOrMacRuleSet)
 }
 
 function Invoke-WindowsRuleSet 
@@ -140,6 +142,14 @@ function Invoke-WindowsRuleSet
     [cmdletbinding()]
     param ($CurrentState = $script:CurrentState)
 
+
+    $Rules = @{
+        LocalAccountLoginEnabled  = {}
+        DomainAccountLoginEnabled = {}
+        OnlySecureTrafficEnabled  = {}
+        PlaintextTrafficAvailable = {}
+        SecureTrafficAvailable    = {}
+    }
     $WindowsRuleSet = @{}
     
     Write-Verbose "Validating Negotiate Auth for the WinRM Service is true:"
@@ -151,7 +161,7 @@ function Invoke-WindowsRuleSet
     $WindowsRuleSet.KerberosAuthEnabled = $CurrentState.Service.Auth.Kerberos.CurrentValue
 
 
-    return (New-CustomObject -TypeName Chef.WinRM.TestResult.WindowsRuleSet -PropertyHashtable $WindowsRuleSet)
+    return (New-CustomObject -TypeName Chef.WinRM.TestResult.WindowsWorkstation -PropertyHashtable $WindowsRuleSet)
 }
 
 function Invoke-WinRMRuleSet 
@@ -241,6 +251,38 @@ function Test-WinRMSetting
     return $IsValid
 }
 
+function Get-WinRMListener
+{
+    New-CustomObject -TypeName Chef.WinRM.Listener -PropertyHashtable @{
+        HTTP = Get-WinRMHttpListener
+        HTTPS = Get-WinRMHttpsListener
+    }
+}
+
+function Get-WinRMHttpListener 
+{
+    $CustomObjectProperties = @{
+        TypeName = 'Chef.WinRM.Listener.Http'
+        PropertyHashtable = @{
+            CurrentValue = ([bool](dir $WinRMSettings.Listener.ProviderPath -Recurse | 
+                where {$_.value -like 'HTTP'}))
+        } 
+    }
+    New-CustomObject @CustomObjectProperties 
+}
+
+function Get-WinRMHttpsListener
+{
+    $CustomObjectProperties = @{
+        TypeName = 'Chef.WinRM.Listener.Https'
+        PropertyHashtable = @{
+            CurrentValue = ([bool](dir $WinRMSettings.Listener.ProviderPath -Recurse | 
+                where {$_.value -like 'HTTPS'}))
+        }
+    }
+    New-CustomObject @CustomObjectProperties 
+}
+
 function Get-WinRMShell
 {    
     $CustomObjectProperties = @{
@@ -303,7 +345,7 @@ function Get-WinRMConfiguration
             IsRunning = Get-WinRMServiceState
             Service =   Get-WinRMServiceConfiguration
             Shell =     Get-WinRMShell
-            #Listener = @{}    
+            Listener =  Get-WinRMListener
         }
     }
     New-CustomObject @CustomObjectProperties

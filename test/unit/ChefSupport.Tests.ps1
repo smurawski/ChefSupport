@@ -70,6 +70,10 @@ function Get-CurrentState
                 }
             }               
         }
+        Listener = @{
+            HTTP = New-Object PSObject -Property @{ CurrentValue = $true }
+            HTTPS = New-Object PSObject -Property @{ CurrentValue = $false }
+        }
     } 
 }
 
@@ -190,93 +194,87 @@ InModuleScope ChefSupport {
     }
     
     Describe 'how Invoke-LinuxOrMacRuleSet responds' {        
-        context 'when AllowUnencrypted is set to false' {     
+        context 'when AllowUnencrypted is enabled and Basic Auth is enabled.' {     
+            $CurrentState = Get-CurrentState               
+            $CurrentState.Service.AllowUnencrypted.CurrentValue = $true
+            $CurrentState.Service.Auth.Basic.CurrentValue = $true
+            
+
+            it 'should have a report showing local account login is enabled' {
+                (Invoke-LinuxOrMacRuleSet -CurrentState $CurrentState).LocalAccountLoginEnabled | 
+                    should be $true
+            }
+        }
+        context 'when AllowUnencrypted is disabled and Basic Auth is enabled and Negotiate Auth is disabled.' {     
             $CurrentState = Get-CurrentState               
             $CurrentState.Service.AllowUnencrypted.CurrentValue = $false
+            $CurrentState.Service.Auth.Negotiate.CurrentValue = $false
+            $CurrentState.Service.Auth.Basic.CurrentValue = $true            
 
-            it 'should return false' {
-                (Invoke-LinuxOrMacRuleSet -CurrentState $CurrentState).IsValid | 
-                    should be $false
-            }
-            it 'should have a report showing AllowUnencrypted is false' {
-                (Invoke-LinuxOrMacRuleSet -CurrentState $CurrentState).AllowUnencryptedEnabled | 
+            it 'should have a report showing local account login is disabled' {
+                (Invoke-LinuxOrMacRuleSet -CurrentState $CurrentState).LocalAccountLoginEnabled | 
                     should be $false
             }
         }
-        context 'when AllowUnencrypted is set to true' {
-            $CurrentState = Get-CurrentState
-            $CurrentState.Service.AllowUnencrypted.CurrentValue = $true
-
-            it 'should return true' {
-                (Invoke-LinuxOrMacRuleSet -CurrentState $CurrentState).IsValid | 
-                    should be $true
-            }
-            it 'should have a report showing AllowUnencrypted is true' {
-                (Invoke-LinuxOrMacRuleSet -CurrentState $CurrentState).AllowUnencryptedEnabled | 
-                    should be $true
-            }            
-        }
-        context 'when Basic Auth is disabled' {
-            $CurrentState = Get-CurrentState
-            $CurrentState.Service.Auth.Basic.CurrentValue = $false
-
-            it 'should return false' {
-                (Invoke-LinuxOrMacRuleSet -CurrentState $CurrentState).IsValid | 
-                    should be $false
-            }
-            it 'should have a report showing Basic Auth is not enabled' {
-                (Invoke-LinuxOrMacRuleSet -CurrentState $CurrentState).BasicAuthEnabled | 
-                    should be $false
-            }  
-        }
-        context 'when Basic Auth is disabled' {
+        context 'when SSL and Negotiate Auth are enabled and Allow Unencrypted is not enabled' {
             $CurrentState = Get-CurrentState
             $CurrentState.Service.Auth.Basic.CurrentValue = $true
+            $CurrentState.Service.Auth.Negotiate.CurrentValue = $true
+            $CurrentState.Service.AllowUnencrypted.CurrentValue = $false
+            $CurrentState.Listener.HTTPS.CurrentValue = $true
 
-            it 'should return true' {
-                (Invoke-LinuxOrMacRuleSet -CurrentState $CurrentState).IsValid | 
+            it 'should have a report showing local account login is enabled' {
+                (Invoke-LinuxOrMacRuleSet -CurrentState $CurrentState).LocalAccountLoginEnabled | 
                     should be $true
             }
-            it 'should have a report showing Basic Auth is enabled' {
-                (Invoke-LinuxOrMacRuleSet -CurrentState $CurrentState).BasicAuthEnabled | 
+            it 'should have a report showing domain account login is enabled' {
+                (Invoke-LinuxOrMacRuleSet -CurrentState $CurrentState).DomainAccountLoginEnabled | 
                     should be $true
-            }  
+            }
+        }
+        context 'when LocalLogin is enabled and HTTPS is not available' {
+            $CurrentState = Get-CurrentState               
+            $CurrentState.Service.AllowUnencrypted.CurrentValue = $true
+            $CurrentState.Service.Auth.Basic.CurrentValue = $true
+            $CurrentState.Listener.HTTP.CurrentValue = $true 
+            $CurrentState.Listener.HTTPS.CurrentValue = $false
+
+            it 'should have a report showing Secure Traffic is not available' {
+                (Invoke-LinuxOrMacRuleSet -CurrentState $CurrentState).SecureTrafficAvailable | 
+                    should be $false
+            }
+            it 'should have a report showing Plaintext Traffic is available' {
+                (Invoke-LinuxOrMacRuleSet -CurrentState $CurrentState).PlaintextTrafficAvailable | 
+                    should be $true
+            }
+        }
+        context 'when LocalLogin is enabled and HTTP and HTTPS are available' {
+            $CurrentState = Get-CurrentState               
+            $CurrentState.Service.AllowUnencrypted.CurrentValue = $true
+            $CurrentState.Service.Auth.Basic.CurrentValue = $true
+            $CurrentState.Listener.HTTP.CurrentValue = $true 
+            $CurrentState.Listener.HTTPS.CurrentValue = $true
+
+            it 'should have a report showing Secure Traffic is available' {
+                (Invoke-LinuxOrMacRuleSet -CurrentState $CurrentState).SecureTrafficAvailable | 
+                    should be $true
+            }
+            it 'should have a report showing Plaintext Traffic is available' {
+                (Invoke-LinuxOrMacRuleSet -CurrentState $CurrentState).PlaintextTrafficAvailable | 
+                    should be $true
+            }
         }
     }    
-
+    
     Describe 'how Invoke-WindowsRuleSet responds' {
         context 'when Negotiate Auth is disabled' {
             $CurrentState = Get-CurrentState               
             $CurrentState.Service.Auth.Negotiate.CurrentValue = $false            
             it 'should have a report showing Negotiate Auth is disabled' {
-                (Invoke-WindowsRuleSet -CurrentState $CurrentState).NegotiateAuthEnabled | 
+                (Invoke-WindowsRuleSet -CurrentState $CurrentState).LocalAccountLoginEnabled | 
                     should be $false
             }
         }
-        context 'when Negotiate Auth is enabled' {     
-            $CurrentState = Get-CurrentState               
-            $CurrentState.Service.Auth.Negotiate.CurrentValue = $true                      
-            it 'should have a report showing Negotiate Auth is enabled' {
-                (Invoke-WindowsRuleSet -CurrentState $CurrentState).NegotiateAuthEnabled | 
-                    should be $true
-            }
-        }
-        context 'when Kerberos Auth is disabled' {
-            $CurrentState = Get-CurrentState               
-            $CurrentState.Service.Auth.Kerberos.CurrentValue = $false            
-            it 'should have a report showing Kerberos Auth is disabled' {
-                (Invoke-WindowsRuleSet -CurrentState $CurrentState).KerberosAuthEnabled | 
-                    should be $false
-            }
-        }
-        context 'when Kerberos Auth is enabled' {     
-            $CurrentState = Get-CurrentState               
-            $CurrentState.Service.Auth.Kerberos.CurrentValue = $true                      
-            it 'should have a report showing Kerberos Auth is enabled' {
-                (Invoke-WindowsRuleSet -CurrentState $CurrentState).KerberosAuthEnabled | 
-                    should be $true
-            }
-        } 
-        
     }
+    
 }
